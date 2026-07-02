@@ -10,10 +10,19 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+
 
 class WeldingDataLoader:
     """
     Loads welding production data from Google Sheets.
+    Supports both:
+    1. Local JSON file
+    2. Streamlit Cloud Secrets
     """
 
     def __init__(
@@ -40,14 +49,32 @@ class WeldingDataLoader:
 
     def _authenticate(self):
 
+        # ---------- Streamlit Cloud ----------
+
+        if STREAMLIT_AVAILABLE:
+
+            try:
+
+                if "gcp_service_account" in st.secrets:
+
+                    credentials = Credentials.from_service_account_info(
+                        dict(st.secrets["gcp_service_account"]),
+                        scopes=self.scopes,
+                    )
+
+                    return gspread.authorize(credentials)
+
+            except Exception:
+                pass
+
+        # ---------- Local Computer ----------
+
         credentials = Credentials.from_service_account_file(
             self.credentials_file,
             scopes=self.scopes,
         )
 
-        client = gspread.authorize(credentials)
-
-        return client
+        return gspread.authorize(credentials)
 
     # ----------------------------------------------------
     # Load Data
@@ -61,17 +88,21 @@ class WeldingDataLoader:
 
             df = pd.DataFrame(records)
 
-            # Replace blank strings with NaN
+            # Replace blanks
             df.replace("", pd.NA, inplace=True)
 
-            # Remove rows without article number
+            # Remove empty article rows
             if "window article no" in df.columns:
+
                 df = df[df["window article no"].notna()]
+
                 df = df[df["window article no"] != ""]
 
-            # Remove leading/trailing spaces
+            # Strip strings
             for column in df.columns:
+
                 if df[column].dtype == "object":
+
                     df[column] = (
                         df[column]
                         .astype(str)
@@ -82,40 +113,37 @@ class WeldingDataLoader:
 
             return df
 
-        except Exception as error:
+        except Exception as e:
 
-            print("\nERROR : Unable to load Google Sheet.\n")
+            print("\nUnable to load Google Sheet\n")
 
-            print(error)
+            print(e)
 
             return pd.DataFrame()
 
     # ----------------------------------------------------
-    # Reload Data
+    # Refresh
     # ----------------------------------------------------
 
     def refresh_data(self):
-        """
-        Reload the latest data from Google Sheets.
-        """
 
         return self.load_data()
 
     # ----------------------------------------------------
-    # Dataset Information
+    # Shape
     # ----------------------------------------------------
 
     def get_shape(self):
 
-        df = self.load_data()
+        return self.load_data().shape
 
-        return df.shape
+    # ----------------------------------------------------
+    # Columns
+    # ----------------------------------------------------
 
     def get_columns(self):
 
-        df = self.load_data()
-
-        return list(df.columns)
+        return list(self.load_data().columns)
 
 
 # --------------------------------------------------------
@@ -128,8 +156,6 @@ if __name__ == "__main__":
 
     df = loader.load_data()
 
-    print("\nFirst Five Rows\n")
-
     print(df.head())
 
-    print("\nShape :", df.shape)
+    print(df.shape)
