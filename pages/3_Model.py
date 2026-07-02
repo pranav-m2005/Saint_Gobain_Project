@@ -131,8 +131,8 @@ fig = px.scatter(
     comparison,
     x="Actual",
     y="Predicted",
-    trendline="ols",
     title="Actual vs Predicted"
+
 )
 
 st.plotly_chart(
