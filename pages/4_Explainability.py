@@ -16,7 +16,6 @@ if str(ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import shap
 import joblib
 
 from core.data_loader import WeldingDataLoader
@@ -65,35 +64,46 @@ X = df[feature_columns]
 model = joblib.load("models/catboost_model.pkl")
 
 # -------------------------------------------------------
-# SHAP Explainer
+# Feature Importance
 # -------------------------------------------------------
 
-explainer = shap.TreeExplainer(model)
+importance = model.get_feature_importance()
 
-shap_values = explainer.shap_values(X)
+importance_df = pd.DataFrame(
+    {
+        "Feature": feature_columns,
+        "Importance": importance
+    }
+).sort_values(
+    by="Importance",
+    ascending=False
+)
 
 # -------------------------------------------------------
 # Title
 # -------------------------------------------------------
 
-st.title("🧠 AI Explainability Dashboard")
+st.title("🧠 AI Model Explainability Dashboard")
 
 st.markdown("---")
 
 st.write("""
-This page explains **why** the CatBoost model predicts a particular
-cycle time by showing the contribution of each input feature.
+This page explains which production parameters have the greatest influence
+on the CatBoost model's welding time prediction.
+
+Instead of SHAP, CatBoost's built-in Feature Importance is used, providing
+a fast and reliable explanation that is fully compatible with Streamlit Cloud.
 """)
 
 # -------------------------------------------------------
-# Select Sample
+# Sample Prediction
 # -------------------------------------------------------
 
 sample_index = st.slider(
     "Select Production Sample",
     0,
-    len(X)-1,
-    0,
+    len(X) - 1,
+    0
 )
 
 selected = X.iloc[[sample_index]]
@@ -103,7 +113,7 @@ prediction = model.predict(selected)[0]
 actual = df.iloc[sample_index]["total_time"]
 
 # -------------------------------------------------------
-# KPI
+# KPI Cards
 # -------------------------------------------------------
 
 c1, c2, c3 = st.columns(3)
@@ -126,103 +136,57 @@ c3.metric(
 st.divider()
 
 # -------------------------------------------------------
-# Global SHAP Importance
+# Feature Importance Chart
 # -------------------------------------------------------
 
-importance = pd.DataFrame({
-
-    "Feature":feature_columns,
-
-    "Importance":abs(shap_values).mean(axis=0)
-
-})
-
-importance = importance.sort_values(
-    by="Importance",
-    ascending=False
-)
+st.subheader("Overall Feature Importance")
 
 fig = px.bar(
-
-    importance,
-
+    importance_df,
     x="Importance",
-
     y="Feature",
-
     orientation="h",
+    text="Importance",
+    title="CatBoost Feature Importance"
+)
 
-    title="Global SHAP Feature Importance"
+fig.update_layout(
+    yaxis=dict(categoryorder="total ascending"),
+    height=550
+)
 
+fig.update_traces(
+    texttemplate="%{text:.2f}",
+    textposition="outside"
 )
 
 st.plotly_chart(
     fig,
-    width="stretch"
+    use_container_width=True
 )
 
 # -------------------------------------------------------
-# Local Explanation
+# Feature Importance Table
 # -------------------------------------------------------
 
-local = pd.DataFrame({
+st.subheader("Importance Ranking")
 
-    "Feature":feature_columns,
-
-    "Contribution":shap_values[sample_index]
-
-})
-
-local["Impact"] = local["Contribution"].abs()
-
-local = local.sort_values(
-    by="Impact",
-    ascending=False
-)
-
-fig = px.bar(
-
-    local,
-
-    x="Contribution",
-
-    y="Feature",
-
-    color="Contribution",
-
-    orientation="h",
-
-    title="Contribution of Each Feature"
-
-)
-
-st.plotly_chart(
-    fig,
-    width="stretch"
+st.dataframe(
+    importance_df,
+    use_container_width=True,
+    hide_index=True
 )
 
 # -------------------------------------------------------
 # Selected Input
 # -------------------------------------------------------
 
-st.subheader("Selected Window Details")
+st.subheader("Selected Production Sample")
 
 st.dataframe(
     selected,
-    width="stretch",
-    hide_index=True,
-)
-
-# -------------------------------------------------------
-# SHAP Values
-# -------------------------------------------------------
-
-st.subheader("Feature Contributions")
-
-st.dataframe(
-    local,
-    width="stretch",
-    hide_index=True,
+    use_container_width=True,
+    hide_index=True
 )
 
 # -------------------------------------------------------
@@ -231,14 +195,25 @@ st.dataframe(
 
 st.subheader("Interpretation")
 
-positive = local[local["Contribution"] > 0]
-
-negative = local[local["Contribution"] < 0]
+top_feature = importance_df.iloc[0]["Feature"]
+top_value = importance_df.iloc[0]["Importance"]
 
 st.success(
-    f"{len(positive)} feature(s) increased the predicted cycle time."
+    f"Most influential feature: **{top_feature}** "
+    f"(Importance Score = {top_value:.2f})"
 )
 
 st.info(
-    f"{len(negative)} feature(s) reduced the predicted cycle time."
+    "Features with higher importance contribute more to the model's prediction "
+    "of welding cycle time. Lower-ranked features have comparatively less influence."
 )
+
+st.markdown("""
+### Key Insights
+
+- Higher importance indicates a stronger impact on welding time prediction.
+- Feature Importance is calculated directly from the trained CatBoost model.
+- The ranking helps identify the process parameters that most influence production performance.
+- This information can support process optimization, bottleneck analysis, and continuous improvement initiatives.
+""")
+
