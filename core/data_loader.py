@@ -49,26 +49,29 @@ class WeldingDataLoader:
 
     def _authenticate(self):
 
-        # ---------- Streamlit Cloud ----------
+        try:
+            import streamlit as st
 
-        if STREAMLIT_AVAILABLE:
+            # Force access to the secret so we see the real error if it fails
+            service_account = st.secrets["gcp_service_account"]
 
-            try:
+            credentials = Credentials.from_service_account_info(
+                dict(service_account),
+                scopes=self.scopes,
+            )
 
-                if "gcp_service_account" in st.secrets:
+            print("✓ Using Streamlit Secrets")
 
-                    credentials = Credentials.from_service_account_info(
-                        dict(st.secrets["gcp_service_account"]),
-                        scopes=self.scopes,
-                    )
+            return gspread.authorize(credentials)
 
-                    return gspread.authorize(credentials)
+        except Exception as e:
 
-            except Exception:
-                pass
+            # Show the actual error in Streamlit logs
+            raise RuntimeError(
+                f"Unable to load Streamlit secret 'gcp_service_account': {e}"
+            )
 
-        # ---------- Local Computer ----------
-
+        # This fallback is only used locally
         credentials = Credentials.from_service_account_file(
             self.credentials_file,
             scopes=self.scopes,
@@ -160,4 +163,3 @@ if __name__ == "__main__":
 
     print(df.shape)
 
-    
