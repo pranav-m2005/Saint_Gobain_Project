@@ -9,6 +9,7 @@ Saint-Gobain Project
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from pathlib import Path
 
 try:
     import streamlit as st
@@ -27,139 +28,77 @@ class WeldingDataLoader:
 
     def __init__(
         self,
-        credentials_file="welding-time-predictor-a9b4dda965dc.json",
+        credentials_file="credentials/welding-time-predictor-a9b4dda965dc.json",
         sheet_name="welding analysis",
     ):
-
-        self.credentials_file = credentials_file
+        self.credentials_file = Path(credentials_file)
         self.sheet_name = sheet_name
-
         self.scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
         ]
-
         self.client = self._authenticate()
-
         self.sheet = self.client.open(self.sheet_name).sheet1
 
-    # ----------------------------------------------------
-    # Authenticate
-    # ----------------------------------------------------
-
     def _authenticate(self):
+        if STREAMLIT_AVAILABLE:
+            try:
+                service_account = st.secrets["gcp_service_account"]
+                credentials = Credentials.from_service_account_info(
+                    dict(service_account),
+                    scopes=self.scopes,
+                )
+                print("✓ Using Streamlit Secrets")
+                return gspread.authorize(credentials)
+            except Exception:
+                pass
 
-        try:
-            import streamlit as st
-
-            # Force access to the secret so we see the real error if it fails
-            service_account = st.secrets["gcp_service_account"]
-
-            credentials = Credentials.from_service_account_info(
-                dict(service_account),
-                scopes=self.scopes,
+        if not self.credentials_file.is_file():
+            raise FileNotFoundError(
+                f"Local credentials file not found: {self.credentials_file.resolve()}"
             )
 
-            print("✓ Using Streamlit Secrets")
-
-            return gspread.authorize(credentials)
-
-        except Exception as e:
-
-            # Show the actual error in Streamlit logs
-            raise RuntimeError(
-                f"Unable to load Streamlit secret 'gcp_service_account': {e}"
-            )
-
-        # This fallback is only used locally
         credentials = Credentials.from_service_account_file(
-            self.credentials_file,
+            str(self.credentials_file),
             scopes=self.scopes,
         )
-
+        print("✓ Using Local Service Account")
         return gspread.authorize(credentials)
 
-    # ----------------------------------------------------
-    # Load Data
-    # ----------------------------------------------------
-
     def load_data(self):
-
         try:
-
             records = self.sheet.get_all_records()
+            if not records:
+                return pd.DataFrame()
 
             df = pd.DataFrame(records)
-
-            # Replace blanks
             df.replace("", pd.NA, inplace=True)
 
-            # Remove empty article rows
+            for col in df.select_dtypes(include=["object"]).columns:
+                df[col] = df[col].astype(str).str.strip()
+
             if "window article no" in df.columns:
-
                 df = df[df["window article no"].notna()]
-
                 df = df[df["window article no"] != ""]
 
-            # Strip strings
-            for column in df.columns:
-
-                if df[column].dtype == "object":
-
-                    df[column] = (
-                        df[column]
-                        .astype(str)
-                        .str.strip()
-                    )
-
             df.reset_index(drop=True, inplace=True)
-
             return df
 
         except Exception as e:
-
-            print("\nUnable to load Google Sheet\n")
-
-            print(e)
-
-            return pd.DataFrame()
-
-    # ----------------------------------------------------
-    # Refresh
-    # ----------------------------------------------------
+            raise RuntimeError(f"Failed to load Google Sheet: {e}")
 
     def refresh_data(self):
-
         return self.load_data()
 
-    # ----------------------------------------------------
-    # Shape
-    # ----------------------------------------------------
-
     def get_shape(self):
-
         return self.load_data().shape
 
-    # ----------------------------------------------------
-    # Columns
-    # ----------------------------------------------------
-
     def get_columns(self):
-
         return list(self.load_data().columns)
 
 
-# --------------------------------------------------------
-# Test
-# --------------------------------------------------------
-
 if __name__ == "__main__":
-
     loader = WeldingDataLoader()
-
     df = loader.load_data()
-
     print(df.head())
-
     print(df.shape)
-

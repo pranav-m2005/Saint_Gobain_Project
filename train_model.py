@@ -1,14 +1,15 @@
 """
 =========================================================
-Train CatBoost Model
+Train Model
 Intelligent Welding Time Estimation & Process Analytics
 Saint-Gobain Project
 =========================================================
 """
 
+import os
+
 from core.data_loader import WeldingDataLoader
 from core.preprocessing import DataPreprocessor
-from core.validator import DataValidator
 from core.trainer import ModelTrainer
 
 
@@ -16,76 +17,83 @@ def main():
 
     print("\n==============================================")
     print("      WELDING TIME MODEL TRAINING")
-    print("==============================================")
+    print("==============================================\n")
 
-    # --------------------------------------------------
+    # -------------------------------------------------------
     # Load Data
-    # --------------------------------------------------
+    # -------------------------------------------------------
+
+    print("Loading data from Google Sheets...")
 
     loader = WeldingDataLoader()
-
     df = loader.load_data()
 
-    print("\n✓ Data Loaded Successfully")
+    print(f"✓ Loaded {len(df)} records\n")
 
-    # --------------------------------------------------
-    # Preprocess Data
-    # --------------------------------------------------
+    # -------------------------------------------------------
+    # Preprocess
+    # -------------------------------------------------------
+
+    print("Preprocessing data...")
 
     df = DataPreprocessor.preprocess(df)
 
-    print("✓ Data Preprocessed")
+    print("✓ Data preprocessing completed\n")
 
-    # --------------------------------------------------
-    # Validate Data
-    # --------------------------------------------------
-
-    DataValidator.validate(df)
-
-    # --------------------------------------------------
+    # -------------------------------------------------------
     # Train Model
-    # --------------------------------------------------
+    # -------------------------------------------------------
+
+    print("Training CatBoost model...")
 
     trainer = ModelTrainer()
 
-    print("\nTraining CatBoost Model...\n")
+    model, metrics, X_test, y_test, predictions = trainer.train(df)
 
-    (
-        model,
-        metrics,
-        X_test,
-        y_test,
-        predictions,
-    ) = trainer.train(df)
+    print("✓ Model training completed\n")
 
-    print("✓ Model Training Completed")
-
-    # --------------------------------------------------
-    # Save Model
-    # --------------------------------------------------
-
-    trainer.save_model(model)
-
-    print("✓ Model Saved Successfully")
-
-    # --------------------------------------------------
-    # Metrics
-    # --------------------------------------------------
+    # -------------------------------------------------------
+    # Model Performance
+    # -------------------------------------------------------
 
     trainer.print_metrics(metrics)
 
-    # --------------------------------------------------
+    # -------------------------------------------------------
     # Feature Importance
-    # --------------------------------------------------
+    # -------------------------------------------------------
 
-    importance = trainer.feature_importance()
+    print("Feature Importance\n")
 
-    print("\n========== FEATURE IMPORTANCE ==========\n")
+    print(trainer.feature_importance())
 
-    print(importance)
+    # -------------------------------------------------------
+    # Article-wise Performance
+    # -------------------------------------------------------
+
+    print("\nArticle-wise Model Performance\n")
+
+    print(
+        trainer.article_performance(
+            X_test,
+            y_test,
+            predictions,
+        )
+    )
+
+    # -------------------------------------------------------
+    # Save Model
+    # -------------------------------------------------------
+
+    os.makedirs("models", exist_ok=True)
+
+    model_path = "models/catboost_model.pkl"
+
+    trainer.save_model(model, model_path)
+
+    print(f"\n✓ Model saved to: {model_path}")
 
     print("\n==============================================")
-    print("Training Completed Successfully")
+    print("      TRAINING COMPLETED SUCCESSFULLY")
     print("==============================================\n")
 
 

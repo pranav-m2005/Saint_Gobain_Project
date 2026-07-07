@@ -6,13 +6,28 @@ Saint-Gobain Project
 =========================================================
 """
 
+from pathlib import Path
+
 import joblib
 import pandas as pd
 
 
 class ModelPredictor:
+    """
+    Loads the trained model and performs predictions for
+    single samples, complete datasets and individual articles.
+    """
 
-    def __init__(self, model_path="models/catboost_model.pkl"):
+    def __init__(self):
+
+        root = Path(__file__).resolve().parent.parent
+        model_path = root / "models" / "catboost_model.pkl"
+
+        if not model_path.exists():
+            raise FileNotFoundError(
+                f"Model not found:\n{model_path}\n\n"
+                "Run train_model.py first."
+            )
 
         self.model = joblib.load(model_path)
 
@@ -27,7 +42,24 @@ class ModelPredictor:
         ]
 
     # --------------------------------------------------
-    # Predict Single Window
+    # Validate Input Columns
+    # --------------------------------------------------
+
+    def _validate_dataframe(self, dataframe):
+
+        missing = [
+            col
+            for col in self.feature_columns
+            if col not in dataframe.columns
+        ]
+
+        if missing:
+            raise ValueError(
+                f"Missing required columns : {missing}"
+            )
+
+    # --------------------------------------------------
+    # Predict Single Sample
     # --------------------------------------------------
 
     def predict(
@@ -58,19 +90,21 @@ class ModelPredictor:
         return round(float(prediction), 2)
 
     # --------------------------------------------------
-    # Predict Multiple Windows
+    # Predict Complete Dataset
     # --------------------------------------------------
 
     def predict_dataframe(self, dataframe):
 
-        dataframe = dataframe[self.feature_columns]
+        self._validate_dataframe(dataframe)
 
-        predictions = self.model.predict(dataframe)
+        X = dataframe[self.feature_columns].copy()
+
+        predictions = self.model.predict(X)
 
         return predictions
 
     # --------------------------------------------------
-    # Predict and Append
+    # Append Predictions
     # --------------------------------------------------
 
     def predict_with_dataframe(self, dataframe):
@@ -79,12 +113,45 @@ class ModelPredictor:
 
         df["predicted_total_time"] = self.predict_dataframe(df)
 
+        df["prediction_error"] = (
+            df["predicted_total_time"] - df["total_time"]
+        )
+
+        df["absolute_error"] = (
+            df["prediction_error"].abs()
+        )
+
         return df
 
+    # --------------------------------------------------
+    # Filter Dataset by Article
+    # --------------------------------------------------
 
-# ------------------------------------------------------
-# Testing
-# ------------------------------------------------------
+    @staticmethod
+    def filter_article(dataframe, article):
+
+        if article == "All Articles":
+            return dataframe.copy()
+
+        return (
+            dataframe[dataframe["article_no"] == article]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+    # --------------------------------------------------
+    # Predict Particular Article
+    # --------------------------------------------------
+
+    def predict_article(self, dataframe, article):
+
+        df = self.filter_article(dataframe, article)
+
+        if df.empty:
+            return df
+
+        return self.predict_with_dataframe(df)
+
 
 if __name__ == "__main__":
 
@@ -101,4 +168,5 @@ if __name__ == "__main__":
     )
 
     print(f"\nPredicted Cycle Time : {prediction:.2f} sec\n")
+
     

@@ -34,17 +34,37 @@ class BottleneckAnalysis:
 
         prediction_df["predicted_time"] = self.model.predict(X)
 
-        prediction_df["time_loss"] = (
+        prediction_df["prediction_error"] = (
             prediction_df["total_time"]
             - prediction_df["predicted_time"]
         )
+
+        # For backward compatibility
+        prediction_df["time_loss"] = prediction_df["prediction_error"]
 
         prediction_df["efficiency"] = (
             prediction_df["predicted_time"]
             / prediction_df["total_time"]
         ) * 100
 
+        prediction_df["delay_percentage"] = (
+            (prediction_df["total_time"] - prediction_df["predicted_time"])
+            / prediction_df["predicted_time"]
+        ) * 100
+
         return prediction_df
+
+    # --------------------------------------------------
+    # Filter by Article
+    # --------------------------------------------------
+
+    @staticmethod
+    def filter_article(df, article):
+
+        if article == "All Articles":
+            return df.copy()
+
+        return df[df["article_no"] == article].reset_index(drop=True)
 
     # --------------------------------------------------
     # Overall Summary
@@ -53,22 +73,33 @@ class BottleneckAnalysis:
     def overall_summary(self, df):
 
         return {
+            "Total Samples": len(df),
+            "Total Articles": df["article_no"].nunique(),
+            "Average Actual Time": round(df["total_time"].mean(), 2),
+            "Average Predicted Time": round(df["predicted_time"].mean(), 2),
+            "Average Prediction Error": round(df["prediction_error"].mean(), 2),
+            "Maximum Prediction Error": round(df["prediction_error"].max(), 2),
+            "Average Efficiency": round(df["efficiency"].mean(), 2),
+        }
 
-            "Average Actual Time":
-                round(df["total_time"].mean(),2),
+    # --------------------------------------------------
+    # Article Summary
+    # --------------------------------------------------
 
-            "Average Predicted Time":
-                round(df["predicted_time"].mean(),2),
+    def article_summary(self, df, article):
 
-            "Average Time Loss":
-                round(df["time_loss"].mean(),2),
+        article_df = self.filter_article(df, article)
 
-            "Maximum Time Loss":
-                round(df["time_loss"].max(),2),
+        if article_df.empty:
+            return {}
 
-            "Average Efficiency":
-                round(df["efficiency"].mean(),2)
-
+        return {
+            "Sample Count": len(article_df),
+            "Average Actual Time": round(article_df["total_time"].mean(), 2),
+            "Average Predicted Time": round(article_df["predicted_time"].mean(), 2),
+            "Average Prediction Error": round(article_df["prediction_error"].mean(), 2),
+            "Maximum Prediction Error": round(article_df["prediction_error"].max(), 2),
+            "Average Efficiency": round(article_df["efficiency"].mean(), 2),
         }
 
     # --------------------------------------------------
@@ -78,32 +109,22 @@ class BottleneckAnalysis:
     def article_ranking(self, df):
 
         article = (
-
             df.groupby("article_no")
-
             .agg(
-
-                Samples=("article_no","count"),
-
-                Average_Loss=("time_loss","mean"),
-
-                Maximum_Loss=("time_loss","max"),
-
-                Average_Efficiency=("efficiency","mean")
-
+                Samples=("article_no", "count"),
+                Average_Actual_Time=("total_time", "mean"),
+                Average_Predicted_Time=("predicted_time", "mean"),
+                Average_Error=("prediction_error", "mean"),
+                Maximum_Error=("prediction_error", "max"),
+                Average_Efficiency=("efficiency", "mean"),
             )
-
             .reset_index()
-
         )
 
         article = article.sort_values(
-
-            by="Average_Loss",
-
+            by="Average_Error",
             ascending=False
-
-        )
+        ).round(2)
 
         return article
 
@@ -114,30 +135,19 @@ class BottleneckAnalysis:
     def operator_ranking(self, df):
 
         operator = (
-
             df.groupby("operator")
-
             .agg(
-
-                Samples=("operator","count"),
-
-                Average_Loss=("time_loss","mean"),
-
-                Average_Efficiency=("efficiency","mean")
-
+                Samples=("operator", "count"),
+                Average_Error=("prediction_error", "mean"),
+                Average_Efficiency=("efficiency", "mean")
             )
-
             .reset_index()
-
         )
 
         operator = operator.sort_values(
-
-            by="Average_Loss",
-
+            by="Average_Error",
             ascending=False
-
-        )
+        ).round(2)
 
         return operator
 
@@ -148,30 +158,19 @@ class BottleneckAnalysis:
     def line_ranking(self, df):
 
         line = (
-
             df.groupby("line_no")
-
             .agg(
-
-                Samples=("line_no","count"),
-
-                Average_Loss=("time_loss","mean"),
-
-                Average_Efficiency=("efficiency","mean")
-
+                Samples=("line_no", "count"),
+                Average_Error=("prediction_error", "mean"),
+                Average_Efficiency=("efficiency", "mean")
             )
-
             .reset_index()
-
         )
 
         line = line.sort_values(
-
-            by="Average_Loss",
-
+            by="Average_Error",
             ascending=False
-
-        )
+        ).round(2)
 
         return line
 
@@ -182,40 +181,24 @@ class BottleneckAnalysis:
     def cross_section_ranking(self, df):
 
         cross = (
-
             df.groupby(
-
                 [
-
                     "cross_section_length",
-
                     "cross_section_width"
-
                 ]
-
             )
-
             .agg(
-
-                Samples=("article_no","count"),
-
-                Average_Loss=("time_loss","mean"),
-
-                Average_Efficiency=("efficiency","mean")
-
+                Samples=("article_no", "count"),
+                Average_Error=("prediction_error", "mean"),
+                Average_Efficiency=("efficiency", "mean")
             )
-
             .reset_index()
-
         )
 
         cross = cross.sort_values(
-
-            by="Average_Loss",
-
+            by="Average_Error",
             ascending=False
-
-        )
+        ).round(2)
 
         return cross
 
@@ -226,11 +209,8 @@ class BottleneckAnalysis:
     def worst_cases(self, df, top=10):
 
         worst = df.sort_values(
-
-            by="time_loss",
-
+            by="prediction_error",
             ascending=False
-
         )
 
         return worst.head(top)
@@ -242,11 +222,8 @@ class BottleneckAnalysis:
     def best_cases(self, df, top=10):
 
         best = df.sort_values(
-
-            by="time_loss",
-
+            by="prediction_error",
             ascending=True
-
         )
 
         return best.head(top)
@@ -257,19 +234,12 @@ class BottleneckAnalysis:
 
     def production_impact(self, df):
 
-        total_loss = df["time_loss"].sum()
+        total_error = df["prediction_error"].sum()
 
         return {
-
-            "Total Time Lost (sec)":
-                round(total_loss,2),
-
-            "Total Time Lost (min)":
-                round(total_loss/60,2),
-
-            "Average Loss / Window":
-                round(df["time_loss"].mean(),2)
-
+            "Total Time Lost (sec)": round(total_error, 2),
+            "Total Time Lost (min)": round(total_error / 60, 2),
+            "Average Loss / Window": round(df["prediction_error"].mean(), 2),
         }
 
 
@@ -303,4 +273,3 @@ if __name__ == "__main__":
     print("\nWorst Cases\n")
 
     print(engine.worst_cases(df))
-    

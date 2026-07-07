@@ -57,6 +57,11 @@ DataValidator.validate(df)
 
 st.sidebar.title("Filters")
 
+article = st.sidebar.selectbox(
+    "Article Number",
+    ["All"] + sorted(df["article_no"].unique().tolist()),
+)
+
 operator = st.sidebar.selectbox(
     "Operator",
     ["All"] + sorted(df["operator"].astype(str).unique().tolist()),
@@ -72,6 +77,11 @@ line = st.sidebar.selectbox(
 # -------------------------------------------------------
 
 filtered_df = df.copy()
+
+if article != "All":
+    filtered_df = filtered_df[
+        filtered_df["article_no"] == article
+    ]
 
 if operator != "All":
     filtered_df = filtered_df[
@@ -90,6 +100,15 @@ if line != "All":
 st.title("📊 Production Analytics Dashboard")
 
 st.markdown("---")
+
+st.info(
+    """
+    This page analyzes production behavior using live data sourced directly from Google Sheets.
+    It helps identify process variations and operator performance across the production lines.
+    Since different article numbers correspond to different geometries and materials,
+    article-wise comparisons are essential for meaningful analysis and interpretation.
+    """
+)
 
 # -------------------------------------------------------
 # KPI Cards
@@ -119,6 +138,19 @@ c4.metric(
 
 st.divider()
 
+st.markdown(
+    """
+    ### KPI Interpretation
+
+    - **Samples**: Number of production cycles considered after applying filters, indicating data volume and reliability.
+    - **Average Cycle Time**: Mean welding time, reflecting overall process efficiency.
+    - **Fastest Cycle**: Minimum recorded cycle time, showing best-case performance.
+    - **Slowest Cycle**: Maximum recorded cycle time, highlighting potential bottlenecks or anomalies.
+
+    **Key Insight:** KPIs should be compared within the same article number to draw meaningful conclusions due to inherent differences in product geometry and material.
+    """
+)
+
 # -------------------------------------------------------
 # Row 1
 # -------------------------------------------------------
@@ -127,31 +159,62 @@ left, right = st.columns(2)
 
 with left:
 
-    fig = px.histogram(
-        filtered_df,
-        x="total_time",
-        nbins=12,
-        title="Cycle Time Distribution",
+    avg_cycle_time_by_article = (
+        filtered_df.groupby("article_no")["total_time"]
+        .mean()
+        .reset_index()
+        .sort_values("total_time")
+    )
+
+    fig = px.bar(
+        avg_cycle_time_by_article,
+        x="article_no",
+        y="total_time",
+        title="Average Cycle Time by Article",
+        labels={"article_no": "Article Number", "total_time": "Average Cycle Time (sec)"},
     )
 
     st.plotly_chart(
         fig,
         width="stretch",
+    )
+
+    st.markdown(
+        """
+        #### Why Article Comparison is Primary
+
+        Different articles correspond to distinct product geometries and materials,
+        which significantly influence welding time and process parameters.
+
+        Comparing cycle times across articles provides foundational insights into manufacturing efficiency,
+        enabling focused analysis on product-specific process characteristics.
+        """
     )
 
 with right:
 
     fig = px.box(
         filtered_df,
-        x="operator",
+        x="article_no",
         y="total_time",
-        color="operator",
-        title="Operator Comparison",
+        color="article_no",
+        title="Cycle Time Distribution by Article",
     )
 
     st.plotly_chart(
         fig,
         width="stretch",
+    )
+
+    st.markdown(
+        """
+        This box plot reveals the distribution of cycle times for each article number.
+        It highlights the consistency and variability within each product category,
+        showing medians, quartiles, and outliers.
+
+        Understanding these patterns helps pinpoint articles with stable production versus those with high variability,
+        guiding quality improvement and process optimization efforts.
+        """
     )
 
 # -------------------------------------------------------
@@ -166,7 +229,7 @@ with left:
         filtered_df,
         x="window_length",
         y="total_time",
-        color="operator",
+        color="article_no",
         size="cross_section_width",
         hover_data=["article_no"],
         title="Window Length vs Total Time",
@@ -177,13 +240,24 @@ with left:
         width="stretch",
     )
 
+    st.markdown(
+        """
+        This scatter plot explores the relationship between window length and total welding cycle time.
+        Each point's size represents the cross section width, and color indicates the article number,
+        allowing multidimensional analysis.
+
+        Clustering by article number indicates the influence of product geometry on cycle times,
+        helping identify product-specific process dependencies.
+        """
+    )
+
 with right:
 
     fig = px.scatter(
         filtered_df,
         x="cross_section_length",
         y="total_time",
-        color="operator",
+        color="article_no",
         size="window_width",
         hover_data=["article_no"],
         title="Cross Section Length vs Total Time",
@@ -194,9 +268,28 @@ with right:
         width="stretch",
     )
 
+    st.markdown(
+        """
+        This scatter plot shows how cross section length influences production time,
+        with point size representing window width and color indicating the article number.
+
+        Clustering by article highlights product geometry's impact on welding duration,
+        assisting in understanding product-specific process behavior.
+        """
+    )
+
 # -------------------------------------------------------
 # Correlation Matrix
 # -------------------------------------------------------
+
+st.markdown(
+    """
+    ### Feature Relationship Analysis
+
+    Correlation measures the strength and direction of linear relationships between variables.
+    Understanding these relationships helps identify key drivers affecting the welding process and cycle times.
+    """
+)
 
 corr = filtered_df.select_dtypes(
     include=["int64", "float64"]
@@ -214,9 +307,30 @@ st.plotly_chart(
     width="stretch",
 )
 
+st.markdown(
+    """
+    Positive correlation indicates variables increase together, negative means one increases as the other decreases,
+    and near-zero suggests little linear relationship.
+
+    Heatmaps visually represent these correlations for quick interpretation.
+
+    Note that correlation does not imply causation.
+
+    Article number strongly influences several dimensional variables and should always be considered first before interpreting correlations.
+    """
+)
+
 # -------------------------------------------------------
 # Raw Dataset
 # -------------------------------------------------------
+
+st.markdown(
+    """
+    ### Filtered Production Records
+
+    The table below reflects all active filters and serves as the data source behind every visualization on this page.
+    """
+)
 
 st.subheader("Production Dataset")
 
@@ -224,4 +338,15 @@ st.dataframe(
     filtered_df,
     width="stretch",
     hide_index=True,
+)
+
+st.success(
+    """
+    Summary:
+
+    - Always compare articles first to understand product-specific cycle times.
+    - Then compare operators within the same article for fair performance evaluation.
+    - Use geometry-related variables to explain differences in cycle times.
+    - Avoid directly comparing different products as their inherent characteristics vary.
+    """
 )
